@@ -336,7 +336,7 @@ export default function SnakeGame() {
       ctx.font = "18px Arial";
       ctx.fillStyle = "#4ecca3";
       ctx.fillText(
-        "Press SPACE or ENTER to start",
+        "Drücke Enter um zu starten",
         canvas.width / 2,
         canvas.height / 2 + 10
       );
@@ -344,7 +344,7 @@ export default function SnakeGame() {
       ctx.font = "14px Arial";
       ctx.fillStyle = "#888";
       ctx.fillText(
-        "Use Arrow Keys or WASD to move",
+        "Benutze Pfeiltasten oder WASD zum steuern",
         canvas.width / 2,
         canvas.height / 2 + 50
       );
@@ -377,7 +377,7 @@ export default function SnakeGame() {
       ctx.fillStyle = "#4ecca3";
       ctx.font = "16px Arial";
       ctx.fillText(
-        "Press SPACE or ENTER to play again",
+        "Drücke Enter um zu starten",
         canvas.width / 2,
         canvas.height / 2 + 85
       );
@@ -433,7 +433,7 @@ export default function SnakeGame() {
       />
 
       <div style={{ color: "#888", fontSize: "0.9rem" }}>
-        Collect the <span style={{ color: "#e94560" }}>IGBCE</span> logos to grow!
+        Sammle die <span style={{ color: "#e94560" }}>IGBCE</span> Logos um zu wachsen!
       </div>
     </div>
   );
