@@ -10,7 +10,11 @@ const INITIAL_SPEED = 150;
 type Position = { x: number; y: number };
 type Direction = "UP" | "DOWN" | "LEFT" | "RIGHT";
 
-export default function SnakeGame() {
+type SnakeGameProps = {
+  onScoreSubmit?: () => void;
+};
+
+export default function SnakeGame({ onScoreSubmit }: SnakeGameProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [snake, setSnake] = useState<Position[]>([{ x: 15, y: 10 }]);
   const [food, setFood] = useState<Position>({ x: 20, y: 10 });
@@ -19,6 +23,10 @@ export default function SnakeGame() {
   const [score, setScore] = useState(0);
   const [gameStarted, setGameStarted] = useState(false);
   const [highScore, setHighScore] = useState(0);
+  const [showNameInput, setShowNameInput] = useState(false);
+  const [playerName, setPlayerName] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [scoreSubmitted, setScoreSubmitted] = useState(false);
 
   const directionRef = useRef<Direction>(direction);
   const headImageRef = useRef<HTMLImageElement | null>(null);
@@ -73,11 +81,39 @@ export default function SnakeGame() {
     setGameOver(false);
     setScore(0);
     setGameStarted(true);
+    setShowNameInput(false);
+    setScoreSubmitted(false);
   }, [generateFood]);
+
+  const submitScore = useCallback(async () => {
+    if (!playerName.trim() || score <= 0 || submitting) return;
+
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/leaderboard", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: playerName.trim(), score }),
+      });
+
+      if (res.ok) {
+        setScoreSubmitted(true);
+        setShowNameInput(false);
+        onScoreSubmit?.();
+      }
+    } catch (err) {
+      console.error("Failed to submit score:", err);
+    } finally {
+      setSubmitting(false);
+    }
+  }, [playerName, score, submitting, onScoreSubmit]);
 
   // Handle keyboard input
   useEffect(() => {
     const handleKeyPress = (e: KeyboardEvent) => {
+      // Don't handle game keys when name input is shown
+      if (showNameInput) return;
+
       if (!gameStarted && !gameOver) {
         if (e.key === " " || e.key === "Enter") {
           resetGame();
@@ -132,7 +168,7 @@ export default function SnakeGame() {
 
     window.addEventListener("keydown", handleKeyPress);
     return () => window.removeEventListener("keydown", handleKeyPress);
-  }, [gameStarted, gameOver, resetGame]);
+  }, [gameStarted, gameOver, resetGame, showNameInput]);
 
   // Game loop
   useEffect(() => {
@@ -350,19 +386,19 @@ export default function SnakeGame() {
       );
     }
 
-    // Draw game over screen
-    if (gameOver) {
+    // Draw game over screen (basic overlay, detailed UI rendered via React)
+    if (gameOver && !showNameInput) {
       ctx.fillStyle = "rgba(0, 0, 0, 0.8)";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
       ctx.fillStyle = "#e94560";
       ctx.font = "bold 36px Arial";
       ctx.textAlign = "center";
-      ctx.fillText("GAME OVER", canvas.width / 2, canvas.height / 2 - 40);
+      ctx.fillText("GAME OVER", canvas.width / 2, canvas.height / 2 - 60);
 
       ctx.fillStyle = "#ffffff";
       ctx.font = "24px Arial";
-      ctx.fillText(`Score: ${score}`, canvas.width / 2, canvas.height / 2 + 10);
+      ctx.fillText(`Score: ${score}`, canvas.width / 2, canvas.height / 2 - 15);
 
       if (highScore > 0) {
         ctx.fillStyle = "#ffd700";
@@ -370,19 +406,34 @@ export default function SnakeGame() {
         ctx.fillText(
           `High Score: ${highScore}`,
           canvas.width / 2,
-          canvas.height / 2 + 45
+          canvas.height / 2 + 20
         );
       }
 
-      ctx.fillStyle = "#4ecca3";
-      ctx.font = "16px Arial";
-      ctx.fillText(
-        "Drücke Enter um zu starten",
-        canvas.width / 2,
-        canvas.height / 2 + 85
-      );
+      if (!scoreSubmitted && score > 0) {
+        ctx.fillStyle = "#4ecca3";
+        ctx.font = "16px Arial";
+        ctx.fillText(
+          "Klicke 'Score speichern' oder Enter zum Neustarten",
+          canvas.width / 2,
+          canvas.height / 2 + 70
+        );
+      } else {
+        ctx.fillStyle = "#4ecca3";
+        ctx.font = "16px Arial";
+        ctx.fillText(
+          "Drücke Enter um neu zu starten",
+          canvas.width / 2,
+          canvas.height / 2 + 70
+        );
+      }
     }
-  }, [snake, food, gameOver, gameStarted, score, highScore]);
+
+    if (showNameInput) {
+      ctx.fillStyle = "rgba(0, 0, 0, 0.9)";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+  }, [snake, food, gameOver, gameStarted, score, highScore, showNameInput, scoreSubmitted]);
 
   return (
     <div
@@ -421,16 +472,121 @@ export default function SnakeGame() {
         )}
       </div>
 
-      <canvas
-        ref={canvasRef}
-        width={GRID_WIDTH * CELL_SIZE}
-        height={GRID_HEIGHT * CELL_SIZE}
-        style={{
-          border: "3px solid #4ecca3",
-          borderRadius: "8px",
-          boxShadow: "0 0 20px rgba(78, 204, 163, 0.3)",
-        }}
-      />
+      <div style={{ position: "relative" }}>
+        <canvas
+          ref={canvasRef}
+          width={GRID_WIDTH * CELL_SIZE}
+          height={GRID_HEIGHT * CELL_SIZE}
+          style={{
+            border: "3px solid #4ecca3",
+            borderRadius: "8px",
+            boxShadow: "0 0 20px rgba(78, 204, 163, 0.3)",
+          }}
+        />
+
+        {/* Save Score Button */}
+        {gameOver && !scoreSubmitted && score > 0 && !showNameInput && (
+          <button
+            onClick={() => setShowNameInput(true)}
+            style={{
+              position: "absolute",
+              left: "50%",
+              top: "60%",
+              transform: "translateX(-50%)",
+              padding: "12px 24px",
+              fontSize: "1rem",
+              fontWeight: "bold",
+              color: "#0f0f23",
+              backgroundColor: "#4ecca3",
+              border: "none",
+              borderRadius: "8px",
+              cursor: "pointer",
+              boxShadow: "0 0 15px rgba(78, 204, 163, 0.5)",
+            }}
+          >
+            Score speichern
+          </button>
+        )}
+
+        {/* Name Input Modal */}
+        {showNameInput && (
+          <div
+            style={{
+              position: "absolute",
+              top: "50%",
+              left: "50%",
+              transform: "translate(-50%, -50%)",
+              backgroundColor: "#1a1a2e",
+              padding: "30px",
+              borderRadius: "12px",
+              border: "2px solid #4ecca3",
+              display: "flex",
+              flexDirection: "column",
+              gap: "20px",
+              alignItems: "center",
+              boxShadow: "0 0 30px rgba(78, 204, 163, 0.3)",
+            }}
+          >
+            <h3 style={{ color: "#fff", margin: 0 }}>Score: {score}</h3>
+            <input
+              type="text"
+              value={playerName}
+              onChange={(e) => setPlayerName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && playerName.trim()) {
+                  submitScore();
+                }
+              }}
+              placeholder="Dein Name"
+              maxLength={20}
+              autoFocus
+              style={{
+                padding: "12px 16px",
+                fontSize: "1rem",
+                borderRadius: "6px",
+                border: "2px solid #4ecca3",
+                backgroundColor: "#0f0f23",
+                color: "#fff",
+                outline: "none",
+                width: "200px",
+                textAlign: "center",
+              }}
+            />
+            <div style={{ display: "flex", gap: "12px" }}>
+              <button
+                onClick={submitScore}
+                disabled={!playerName.trim() || submitting}
+                style={{
+                  padding: "10px 20px",
+                  fontSize: "1rem",
+                  fontWeight: "bold",
+                  color: "#0f0f23",
+                  backgroundColor: playerName.trim() ? "#4ecca3" : "#666",
+                  border: "none",
+                  borderRadius: "6px",
+                  cursor: playerName.trim() ? "pointer" : "not-allowed",
+                }}
+              >
+                {submitting ? "..." : "Speichern"}
+              </button>
+              <button
+                onClick={() => setShowNameInput(false)}
+                style={{
+                  padding: "10px 20px",
+                  fontSize: "1rem",
+                  color: "#fff",
+                  backgroundColor: "transparent",
+                  border: "2px solid #666",
+                  borderRadius: "6px",
+                  cursor: "pointer",
+                }}
+              >
+                Abbrechen
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
 
       <div style={{ color: "#888", fontSize: "0.9rem" }}>
         Sammle die <span style={{ color: "#e94560" }}>IGBCE</span> Logos um zu wachsen!
