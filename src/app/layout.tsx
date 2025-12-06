@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Kerwel Snake Game",
-  description: "A fun snake game featuring Kerwel!",
+  title: "Kerwel-Snake",
+  description: "Kerwel wird zur Schlange und frisst die IGBCE auf!",
 };
 
 export default function RootLayout({
