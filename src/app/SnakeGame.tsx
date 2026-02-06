@@ -6,6 +6,7 @@ const CELL_SIZE = 20;
 const GRID_WIDTH = 30;
 const GRID_HEIGHT = 20;
 const INITIAL_SPEED = 150;
+const SWIPE_THRESHOLD = 30;
 
 type Position = { x: number; y: number };
 type Direction = "UP" | "DOWN" | "LEFT" | "RIGHT";
@@ -16,6 +17,7 @@ type SnakeGameProps = {
 
 export default function SnakeGame({ onScoreSubmit }: SnakeGameProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [snake, setSnake] = useState<Position[]>([{ x: 15, y: 10 }]);
   const [food, setFood] = useState<Position>({ x: 20, y: 10 });
   const [direction, setDirection] = useState<Direction>("RIGHT");
@@ -27,11 +29,14 @@ export default function SnakeGame({ onScoreSubmit }: SnakeGameProps) {
   const [playerName, setPlayerName] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [scoreSubmitted, setScoreSubmitted] = useState(false);
+  const [isTouchDevice, setIsTouchDevice] = useState(false);
+  const [canvasScale, setCanvasScale] = useState(1);
 
   const directionRef = useRef<Direction>(direction);
   const headImageRef = useRef<HTMLImageElement | null>(null);
   const foodImageRef = useRef<HTMLImageElement | null>(null);
   const imagesLoaded = useRef(false);
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
 
   // Load images
   useEffect(() => {
@@ -55,6 +60,33 @@ export default function SnakeGame({ onScoreSubmit }: SnakeGameProps) {
         imagesLoaded.current = true;
       }
     }
+  }, []);
+
+  // Detect touch device
+  useEffect(() => {
+    const checkTouch = () => setIsTouchDevice(true);
+    window.addEventListener("touchstart", checkTouch, { once: true });
+    // Also check via media query
+    if (window.matchMedia("(pointer: coarse)").matches) {
+      setIsTouchDevice(true);
+    }
+    return () => window.removeEventListener("touchstart", checkTouch);
+  }, []);
+
+  // Responsive canvas scaling
+  useEffect(() => {
+    const updateScale = () => {
+      const maxWidth = window.innerWidth - 32; // 16px padding each side
+      const canvasWidth = GRID_WIDTH * CELL_SIZE;
+      if (maxWidth < canvasWidth) {
+        setCanvasScale(maxWidth / canvasWidth);
+      } else {
+        setCanvasScale(1);
+      }
+    };
+    updateScale();
+    window.addEventListener("resize", updateScale);
+    return () => window.removeEventListener("resize", updateScale);
   }, []);
 
   const generateFood = useCallback((currentSnake: Position[]): Position => {
@@ -107,6 +139,122 @@ export default function SnakeGame({ onScoreSubmit }: SnakeGameProps) {
       setSubmitting(false);
     }
   }, [playerName, score, submitting, onScoreSubmit]);
+
+  // Touch swipe controls
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const handleTouchStart = (e: TouchEvent) => {
+      if (showNameInput) return;
+      const touch = e.touches[0];
+      touchStartRef.current = { x: touch.clientX, y: touch.clientY };
+    };
+
+    const handleTouchEnd = (e: TouchEvent) => {
+      if (showNameInput) return;
+      if (!touchStartRef.current) return;
+
+      const touch = e.changedTouches[0];
+      const dx = touch.clientX - touchStartRef.current.x;
+      const dy = touch.clientY - touchStartRef.current.y;
+      const absDx = Math.abs(dx);
+      const absDy = Math.abs(dy);
+
+      // If swipe is too short, treat as tap
+      if (absDx < SWIPE_THRESHOLD && absDy < SWIPE_THRESHOLD) {
+        if (!gameStarted && !gameOver) {
+          resetGame();
+        } else if (gameOver && !showNameInput) {
+          resetGame();
+        }
+        touchStartRef.current = null;
+        return;
+      }
+
+      const currentDir = directionRef.current;
+
+      if (absDx > absDy) {
+        if (dx > 0 && currentDir !== "LEFT") {
+          setDirection("RIGHT");
+          directionRef.current = "RIGHT";
+        } else if (dx < 0 && currentDir !== "RIGHT") {
+          setDirection("LEFT");
+          directionRef.current = "LEFT";
+        }
+      } else {
+        if (dy > 0 && currentDir !== "UP") {
+          setDirection("DOWN");
+          directionRef.current = "DOWN";
+        } else if (dy < 0 && currentDir !== "DOWN") {
+          setDirection("UP");
+          directionRef.current = "UP";
+        }
+      }
+
+      touchStartRef.current = null;
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (gameStarted && !gameOver) {
+        e.preventDefault();
+      }
+    };
+
+    canvas.addEventListener("touchstart", handleTouchStart, { passive: true });
+    canvas.addEventListener("touchend", handleTouchEnd, { passive: true });
+    canvas.addEventListener("touchmove", handleTouchMove, { passive: false });
+
+    return () => {
+      canvas.removeEventListener("touchstart", handleTouchStart);
+      canvas.removeEventListener("touchend", handleTouchEnd);
+      canvas.removeEventListener("touchmove", handleTouchMove);
+    };
+  }, [gameStarted, gameOver, showNameInput, resetGame]);
+
+  // Prevent body scroll on mobile while game is active
+  useEffect(() => {
+    if (!isTouchDevice) return;
+
+    const preventScroll = (e: TouchEvent) => {
+      if (gameStarted && !gameOver) {
+        const target = e.target as HTMLElement;
+        if (target.closest("[data-game-area]")) {
+          e.preventDefault();
+        }
+      }
+    };
+
+    document.addEventListener("touchmove", preventScroll, { passive: false });
+    return () => document.removeEventListener("touchmove", preventScroll);
+  }, [gameStarted, gameOver, isTouchDevice]);
+
+  // D-Pad button handler
+  const handleDpadPress = useCallback(
+    (newDirection: Direction) => {
+      if (!gameStarted && !gameOver) {
+        resetGame();
+        return;
+      }
+      if (gameOver) {
+        resetGame();
+        return;
+      }
+
+      const currentDir = directionRef.current;
+      const opposites: Record<Direction, Direction> = {
+        UP: "DOWN",
+        DOWN: "UP",
+        LEFT: "RIGHT",
+        RIGHT: "LEFT",
+      };
+      if (opposites[newDirection] !== currentDir) {
+        setDirection(newDirection);
+        directionRef.current = newDirection;
+      }
+    },
+    [gameStarted, gameOver, resetGame]
+  );
 
   // Handle keyboard input
   useEffect(() => {
@@ -372,7 +520,7 @@ export default function SnakeGame({ onScoreSubmit }: SnakeGameProps) {
       ctx.font = "18px Arial";
       ctx.fillStyle = "#4ecca3";
       ctx.fillText(
-        "Drücke Enter um zu starten",
+        isTouchDevice ? "Tippe um zu starten" : "Drücke Enter um zu starten",
         canvas.width / 2,
         canvas.height / 2 + 10
       );
@@ -380,7 +528,9 @@ export default function SnakeGame({ onScoreSubmit }: SnakeGameProps) {
       ctx.font = "14px Arial";
       ctx.fillStyle = "#888";
       ctx.fillText(
-        "Benutze Pfeiltasten oder WASD zum steuern",
+        isTouchDevice
+          ? "Wische oder benutze die Buttons zum steuern"
+          : "Benutze Pfeiltasten oder WASD zum steuern",
         canvas.width / 2,
         canvas.height / 2 + 50
       );
@@ -414,7 +564,9 @@ export default function SnakeGame({ onScoreSubmit }: SnakeGameProps) {
         ctx.fillStyle = "#4ecca3";
         ctx.font = "16px Arial";
         ctx.fillText(
-          "Klicke 'Score speichern' oder Enter zum Neustarten",
+          isTouchDevice
+            ? "'Score speichern' oder tippe zum Neustarten"
+            : "Klicke 'Score speichern' oder Enter zum Neustarten",
           canvas.width / 2,
           canvas.height / 2 + 70
         );
@@ -422,7 +574,9 @@ export default function SnakeGame({ onScoreSubmit }: SnakeGameProps) {
         ctx.fillStyle = "#4ecca3";
         ctx.font = "16px Arial";
         ctx.fillText(
-          "Drücke Enter um neu zu starten",
+          isTouchDevice
+            ? "Tippe um neu zu starten"
+            : "Drücke Enter um neu zu starten",
           canvas.width / 2,
           canvas.height / 2 + 70
         );
@@ -433,21 +587,43 @@ export default function SnakeGame({ onScoreSubmit }: SnakeGameProps) {
       ctx.fillStyle = "rgba(0, 0, 0, 0.9)";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
-  }, [snake, food, gameOver, gameStarted, score, highScore, showNameInput, scoreSubmitted]);
+  }, [snake, food, gameOver, gameStarted, score, highScore, showNameInput, scoreSubmitted, isTouchDevice]);
+
+  const dpadButtonStyle = (active?: boolean): React.CSSProperties => ({
+    width: "56px",
+    height: "56px",
+    fontSize: "1.5rem",
+    fontWeight: "bold",
+    color: "#0f0f23",
+    backgroundColor: active ? "#3db88e" : "#4ecca3",
+    border: "none",
+    borderRadius: "12px",
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    userSelect: "none",
+    WebkitTapHighlightColor: "transparent",
+    touchAction: "manipulation",
+  });
 
   return (
     <div
+      ref={containerRef}
+      data-game-area
       style={{
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
-        gap: "20px",
+        gap: "12px",
+        width: "100%",
+        maxWidth: `${GRID_WIDTH * CELL_SIZE + 6}px`,
       }}
     >
       <h1
         style={{
           color: "#4ecca3",
-          fontSize: "2rem",
+          fontSize: "clamp(1.3rem, 5vw, 2rem)",
           textShadow: "0 0 10px rgba(78, 204, 163, 0.5)",
         }}
       >
@@ -457,9 +633,9 @@ export default function SnakeGame({ onScoreSubmit }: SnakeGameProps) {
       <div
         style={{
           display: "flex",
-          gap: "40px",
+          gap: "20px",
           color: "#fff",
-          fontSize: "1.2rem",
+          fontSize: "clamp(0.9rem, 3vw, 1.2rem)",
         }}
       >
         <span>
@@ -472,7 +648,15 @@ export default function SnakeGame({ onScoreSubmit }: SnakeGameProps) {
         )}
       </div>
 
-      <div style={{ position: "relative" }}>
+      <div
+        style={{
+          position: "relative",
+          width: `${GRID_WIDTH * CELL_SIZE}px`,
+          height: `${GRID_HEIGHT * CELL_SIZE}px`,
+          transform: canvasScale < 1 ? `scale(${canvasScale})` : undefined,
+          transformOrigin: "top center",
+        }}
+      >
         <canvas
           ref={canvasRef}
           width={GRID_WIDTH * CELL_SIZE}
@@ -481,6 +665,7 @@ export default function SnakeGame({ onScoreSubmit }: SnakeGameProps) {
             border: "3px solid #4ecca3",
             borderRadius: "8px",
             boxShadow: "0 0 20px rgba(78, 204, 163, 0.3)",
+            touchAction: "none",
           }}
         />
 
@@ -517,14 +702,15 @@ export default function SnakeGame({ onScoreSubmit }: SnakeGameProps) {
               left: "50%",
               transform: "translate(-50%, -50%)",
               backgroundColor: "#1a1a2e",
-              padding: "30px",
+              padding: "24px",
               borderRadius: "12px",
               border: "2px solid #4ecca3",
               display: "flex",
               flexDirection: "column",
-              gap: "20px",
+              gap: "16px",
               alignItems: "center",
               boxShadow: "0 0 30px rgba(78, 204, 163, 0.3)",
+              width: "min(280px, 90%)",
             }}
           >
             <h3 style={{ color: "#fff", margin: 0 }}>Score: {score}</h3>
@@ -548,8 +734,9 @@ export default function SnakeGame({ onScoreSubmit }: SnakeGameProps) {
                 backgroundColor: "#0f0f23",
                 color: "#fff",
                 outline: "none",
-                width: "200px",
+                width: "100%",
                 textAlign: "center",
+                boxSizing: "border-box",
               }}
             />
             <div style={{ display: "flex", gap: "12px" }}>
@@ -588,7 +775,83 @@ export default function SnakeGame({ onScoreSubmit }: SnakeGameProps) {
         )}
       </div>
 
-      <div style={{ color: "#888", fontSize: "0.9rem" }}>
+      {/* Spacer to account for scaled canvas height */}
+      {canvasScale < 1 && (
+        <div
+          style={{
+            height: `${GRID_HEIGHT * CELL_SIZE * (1 - canvasScale)}px`,
+          }}
+        />
+      )}
+
+      {/* On-screen D-Pad for touch devices */}
+      {isTouchDevice && (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "56px 56px 56px",
+            gridTemplateRows: "56px 56px 56px",
+            gap: "6px",
+            marginTop: "4px",
+          }}
+        >
+          <div />
+          <button
+            onTouchStart={(e) => {
+              e.preventDefault();
+              handleDpadPress("UP");
+            }}
+            style={dpadButtonStyle()}
+            aria-label="Hoch"
+          >
+            &#9650;
+          </button>
+          <div />
+          <button
+            onTouchStart={(e) => {
+              e.preventDefault();
+              handleDpadPress("LEFT");
+            }}
+            style={dpadButtonStyle()}
+            aria-label="Links"
+          >
+            &#9664;
+          </button>
+          <div
+            style={{
+              width: "56px",
+              height: "56px",
+              borderRadius: "12px",
+              backgroundColor: "#1a1a2e",
+              border: "2px solid #2d8a6e",
+            }}
+          />
+          <button
+            onTouchStart={(e) => {
+              e.preventDefault();
+              handleDpadPress("RIGHT");
+            }}
+            style={dpadButtonStyle()}
+            aria-label="Rechts"
+          >
+            &#9654;
+          </button>
+          <div />
+          <button
+            onTouchStart={(e) => {
+              e.preventDefault();
+              handleDpadPress("DOWN");
+            }}
+            style={dpadButtonStyle()}
+            aria-label="Runter"
+          >
+            &#9660;
+          </button>
+          <div />
+        </div>
+      )}
+
+      <div style={{ color: "#888", fontSize: "0.9rem", textAlign: "center" }}>
         Sammle die <span style={{ color: "#e94560" }}>IGBCE</span> Logos um zu wachsen!
       </div>
     </div>

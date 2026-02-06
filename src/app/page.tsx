@@ -18,8 +18,9 @@ export default function Home() {
         display: "flex",
         justifyContent: "center",
         alignItems: "center",
-        padding: "20px",
+        padding: "16px",
         gap: "40px",
+        flexWrap: "wrap",
       }}
     >
       <SnakeGame onScoreSubmit={handleScoreSubmit} />
